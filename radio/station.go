@@ -6,6 +6,8 @@ package radio
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -249,6 +251,42 @@ func (s *Station) QueueTrack(t *Track) {
 	defer s.mu.Unlock()
 	t.AddedAt = time.Now()
 	s.Queue = append(s.Queue, t)
+}
+
+// GetQueue returns a snapshot of the current track queue.
+func (s *Station) GetQueue() []*Track {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*Track, len(s.Queue))
+	copy(out, s.Queue)
+	return out
+}
+
+// QueueTrackFromAPI creates a track from API input, registers it on-chain, and queues it.
+func (s *Station) QueueTrackFromAPI(title, artist, source, cid string) *Track {
+	if artist == "" {
+		artist = "unknown"
+	}
+	if source == "" {
+		source = "api"
+	}
+	if cid == "" {
+		h := sha256.Sum256([]byte(title + artist + time.Now().String()))
+		cid = hex.EncodeToString(h[:])
+	}
+	t := &Track{
+		CID:     cid,
+		Title:   title,
+		Artist:  artist,
+		Source:  source,
+		AddedBy: s.Identity,
+		AddedAt: time.Now(),
+	}
+	if err := s.RegisterTrackOnChain(t); err != nil {
+		fmt.Printf("[api] warn: register track: %v\n", err)
+	}
+	s.QueueTrack(t)
+	return t
 }
 
 // RegisterTrackOnChain records track metadata on Solana (via Memo program)

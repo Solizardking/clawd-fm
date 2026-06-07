@@ -9,6 +9,7 @@ services:
     restart: unless-stopped
     ports:
       - "9669:9669"
+      - "8080:8080"
     volumes:
       - clawd-data:/data
     environment:
@@ -16,6 +17,7 @@ services:
       CLAWD_FM_ADDR: ":9669"
       CLAWD_SOL_NETWORK: "${CLAWD_SOL_NETWORK:-devnet}"
       CLAWD_SOL_KEYFILE: "/data/solana-keypair.json"
+      CLAWD_HTTP_ADDR: ":8080"
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "9669"]
       interval: 30s

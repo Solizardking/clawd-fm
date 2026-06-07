@@ -462,6 +462,15 @@ func cmdDaemon(args []string) error {
 	}
 	defer st.Stop()
 
+	// Start HTTP API.
+	httpAddr := envOr("CLAWD_HTTP_ADDR", ":8080")
+	apiSrv := clawdapi.New(st)
+	go func() {
+		if err := apiSrv.Start(httpAddr); err != nil {
+			fmt.Printf("[api] error: %v\n", err)
+		}
+	}()
+
 	// Register daemon genesis block.
 	genesis := &radio.Track{
 		CID:    hashString(fmt.Sprintf("%s-daemon-%d", name, time.Now().Unix())),
