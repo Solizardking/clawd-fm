@@ -1,0 +1,4 @@
+clawdamp
+*.log
+.clawdamp/
+.DS_Store

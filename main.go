@@ -111,11 +111,11 @@ func interactive(ctx context.Context) error {
 
 	// Demo: register a track on-chain.
 	demoTrack := &radio.Track{
-		CID:    hashString("demo-track-1"),
-		Title:  "First Clawdamp Broadcast",
-		Artist: "Clawdamp Genesis",
+		CID:      hashString("demo-track-1"),
+		Title:    "First Clawdamp Broadcast",
+		Artist:   "Clawdamp Genesis",
 		Duration: 3*time.Minute + 30*time.Second,
-		Source: "local",
+		Source:   "local",
 	}
 	if err := st.RegisterTrackOnChain(demoTrack); err != nil {
 		fmt.Printf("⚠️  Track registration: %v\n", err)

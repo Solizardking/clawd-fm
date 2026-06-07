@@ -29,11 +29,11 @@ const (
 type Status string
 
 const (
-	StatusIdle     Status = "idle"
+	StatusIdle      Status = "idle"
 	StatusStreaming Status = "streaming"
 	StatusListening Status = "listening"
-	StatusTrading  Status = "trading"
-	StatusOffline  Status = "offline"
+	StatusTrading   Status = "trading"
+	StatusOffline   Status = "offline"
 )
 
 // Identity uniquely identifies an agent on the clawdamp network.
@@ -100,7 +100,7 @@ type Message struct {
 	Type      string    `json:"type"`
 	Payload   []byte    `json:"payload"`
 	Signature []byte    `json:"signature"`
-	Timestamp  time.Time `json:"timestamp"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // New creates a new agent.
@@ -118,7 +118,7 @@ func New(id *Identity, priv ed25519.PrivateKey) *Agent {
 }
 
 // SetHandlers configures the agent's behavior callbacks.
-func (a *Agent) SetHandlers(onTick, onMessage, onStart, onStop func(ctx context.Context) error) {
+func (a *Agent) SetHandlers(onTick func(ctx context.Context) error, onMessage func(ctx context.Context, from *Identity, payload []byte) error, onStart, onStop func(ctx context.Context) error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.onTick = onTick

@@ -1,196 +1,152 @@
-A retro terminal music player inspired by Winamp. Play local files, streams, podcasts, YouTube, YouTube Music, SoundCloud, Bilibili, Spotify, NetEase Cloud Music, Xiaoyuzhou (小宇宙), Navidrome, Plex, and Jellyfin with a spectrum visualizer, parametric EQ, and playlist management.
+# clawdamp 🎧⚡
 
-**[clawdamp.stream](https://clawdamp.stream)**
+**Blockchain terminal radio station. Broadcast music from terminal to terminal.**
 
-Built with [Bubbletea](https://github.com/charmbracelet/bubbletea), [Lip Gloss](https://github.com/charmbracelet/lipgloss), [Beep](https://github.com/gopxl/beep), and [go-librespot](https://github.com/devgianlu/go-librespot).
+clawdamp lets you run a decentralized radio station entirely from your terminal. Agents autonomously curate playlists, stream audio chunks peer-to-peer, tip in CLAW tokens on-chain, and gossip across the network — all without centralized servers.
 
-
-https://github.com/user-attachments/assets/fbc33d20-e3ac-4a62-a991-8a2f0243c8ea
-
-
-## Install
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/clawd-fi/clawdamp/HEAD/install.sh | sh
+```
+   ▄████████  ▄█        ▄████████ ▄██   ▄   ████████▄     ▄████████   ▄▄▄▄███▄▄▄▄      ▄███████▄  
+  ███    ███ ███       ███    ███ ███   ██▄ ███   ▀███   ███    ███ ▄██▀▀▀███▀▀▀██▄   ███    ███ 
+  ███    █▀  ███       ███    ███ ███▄▄▄███ ███    ███   ███    █▀  ███   ███   ███   ███    ███ 
+  ███        ███       ███    ███ ▀▀▀▀▀▀███ ███    ███  ▄███▄▄▄     ███   ███   ███   ███    ███ 
+  ███        ███     ▀███████████ ▄██   ███ ███    ███ ▀▀███▀▀▀     ███   ███   ███ ▀█████████▀  
+  ███    █▄  ███       ███    ███ ███   ███ ███    ███   ███    █▄  ███   ███   ███   ███        
+  ███    ███ ███▌    ▄ ███    ███ ███   ███ ███   ▄███   ███    ███ ███   ███   ███   ███        
+  ████████▀  █████▄▄██ ███    █▀   ▀█████▀  ████████▀    ██████████  ▀█   ███   █▀   ▄████▀      
 ```
 
-**Homebrew**
+## Architecture
 
-```sh
-brew install clawd-fi/clawdamp/clawdamp
 ```
-
-The formula pulls in all required runtime libraries automatically.
-
-**Arch Linux (AUR)**
-
-```sh
-yay -S clawdamp
-```
-
-**Pre-built binaries**
-
-Download from [GitHub Releases](https://github.com/clawd-fi/clawdamp/releases/latest).
-
-> **macOS:** the pre-built binaries dynamically link against FLAC, Vorbis, and Ogg
-> from Homebrew. If you download directly from Releases (or use the `install.sh`
-> script) you must install them first, otherwise you will see errors like
-> `Library not loaded: /opt/homebrew/opt/libvorbis/lib/libvorbisenc.2.dylib`:
->
-> ```sh
-> brew install flac libvorbis libogg
-> ```
->
-> Installing via `brew install clawd-fi/clawdamp/clawdamp` does this for you.
->
-> **Linux:** the pre-built binaries statically link FLAC, Vorbis, and Ogg, so no
-> extra codec packages are required. You may still need an ALSA bridge for your
-> sound server — see [Troubleshooting](#troubleshooting).
->
-> **Windows:** download `clawdamp-windows-amd64.exe` from Releases. If `HOME` is not
-> set, clawdamp stores its config under `%APPDATA%\clawdamp`. The Spotify provider is
-> currently unavailable on Windows builds.
-
-**Optional runtime dependencies** (all platforms, all install methods):
-
-- [ffmpeg](https://ffmpeg.org/) — for AAC, ALAC, Opus, and WMA playback
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — for YouTube, YouTube Music, SoundCloud, Bandcamp, Bilibili, and NetEase Cloud Music
-
-On macOS: `brew install ffmpeg yt-dlp`. On Linux, use your distribution's package manager.
-
-On Windows, install `ffmpeg` and `yt-dlp` with your preferred package manager and keep both on `PATH`.
-
-**Build from source**
-
-```sh
-git clone https://github.com/clawd-fi/clawdamp.git && cd clawdamp && go build -o clawdamp .
+┌──────────────────────────────────────────────────────┐
+│                    CLAWDAMP NODE                      │
+│  ┌──────────┐  ┌──────────┐  ┌────────────────────┐  │
+│  │  Agent   │  │  Agent   │  │  P2P Network       │  │
+│  │  (DJ)    │  │(Listener)│  │  gossip · streaming │  │
+│  └────┬─────┘  └────┬─────┘  └────────┬───────────┘  │
+│       │              │                │               │
+│  ┌────┴──────────────┴────────────────┴───────────┐  │
+│  │              RADIO STATION                      │  │
+│  │  queue · now-playing · chat · events           │  │
+│  └──────────────────────┬─────────────────────────┘  │
+│                          │                            │
+│  ┌──────────────────────┴─────────────────────────┐  │
+│  │              BLOCKCHAIN LEDGER                  │  │
+│  │  tracks · playlists · tips · CLAW token        │  │
+│  └────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
 
-```sh
-clawdamp ~/Music                     # play a directory
-clawdamp *.mp3 *.flac               # play files
-clawdamp https://example.com/stream  # play a URL
-```
-
-Press `Ctrl+K` to see all keybindings.
-
-**Configure remote providers** (Navidrome, Plex, Jellyfin, Spotify, YouTube Music, NetEase Cloud Music) with the interactive wizard:
-
-```sh
-clawdamp setup
-```
-
-It walks you through each provider, validates the connection, and writes the right block to your config file (`~/.config/clawdamp/config.toml`, or `%APPDATA%\clawdamp\config.toml` on Windows when `HOME` is unset). See [docs/cli.md](docs/cli.md#setup-wizard) for details.
-
-## Radio
-
-Press `R` in the player to browse and search 30,000+ online radio stations from the [Radio Browser](https://www.radio-browser.info/) directory.
-
-Add your own stations to `~/.config/clawdamp/radios.toml` (or `%APPDATA%\clawdamp\radios.toml` on Windows when `HOME` is unset). See [docs/configuration.md](docs/configuration.md#custom-radio-stations).
-
-Want to host your own radio? Check out [clawdamp-server](https://github.com/clawd-fi/clawdamp-server).
-
-## Building from source
-
-**Prerequisites:**
-
-- [Go](https://go.dev/dl/) 1.25.5 or later
-- ALSA development headers (Linux only — required by the audio backend)
-
-**Linux (Debian/Ubuntu):**
-
-```sh
-sudo apt install libasound2-dev
-```
-
-**Linux (Fedora):**
-
-```sh
-sudo dnf install alsa-lib-devel libvorbis-devel flac-devel
-```
-
-**Linux (Arch):**
-
-```sh
-sudo pacman -S alsa-lib
-```
-
-**macOS:** No extra dependencies — CoreAudio is used.
-
-**Windows:** No extra SDKs required for the core player. `ffmpeg.exe` and `yt-dlp.exe` remain optional runtime dependencies for the same formats/providers as on other platforms. Spotify is not available on Windows builds.
-
-**Clone and build:**
+### Install
 
 ```sh
 git clone https://github.com/clawd-fi/clawdamp.git
 cd clawdamp
-make && make install
+go build -o clawdamp .
 ```
 
-Or without Make: `go build -o clawdamp .`
-
-`make install` places the binary in `~/.local/bin/`.
-
-**Optional runtime dependencies:**
-
-- [ffmpeg](https://ffmpeg.org/) — for AAC, ALAC, Opus, and WMA playback
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — for YouTube, SoundCloud, Bandcamp, Bilibili, and NetEase Cloud Music
-
-## Docs
-
-- [Configuration](docs/configuration.md)
-- [Keybindings](docs/keybindings.md)
-- [CLI Flags](docs/cli.md)
-- [Streaming](docs/streaming.md)
-- [Playlists](docs/playlists.md)
-- [YouTube, SoundCloud, Bandcamp and Bilibili](docs/yt-dlp.md)
-- [YouTube Music](docs/youtube-music.md)
-- [NetEase Cloud Music](docs/netease.md)
-- [SoundCloud](docs/soundcloud.md)
-- [Lyrics](docs/lyrics.md)
-- [Spotify](docs/spotify.md)
-- [Navidrome](docs/navidrome.md)
-- [Plex](docs/plex.md)
-- [Jellyfin](docs/jellyfin.md)
-- [Themes](docs/themes.md)
-- [SSH Streaming](docs/ssh-streaming.md)
-- [Remote Control (IPC)](docs/remote-control.md)
-- [Headless Daemon Mode](docs/headless.md)
-- [Audio Quality](docs/audio-quality.md)
-- [Media Controls](docs/mediactl.md)
-- [Quickshell Now-Playing Widget (Omarchy)](docs/quickshell.md)
-- [Lua Plugins](docs/plugins.md)
-  - [Community Plugins](docs/community-plugins.md)
-  - [Soap Bubbles Visualizer](https://github.com/clawd-fi/clawdamp-plugin-soap-bubbles)
-
-## Troubleshooting
-
-**No audio output (silence with no errors)**
-
-On Linux systems using PipeWire or PulseAudio, clawdamp's ALSA backend needs a bridge package to route audio through your sound server:
-
-- **PipeWire:** `pipewire-alsa`
-- **PulseAudio:** `pulseaudio-alsa`
-
-Install the appropriate package for your system:
+### Initialize a station
 
 ```sh
-# PipeWire (Arch)
-sudo pacman -S pipewire-alsa
-
-# PulseAudio (Arch)
-sudo pacman -S pulseaudio-alsa
-
-# Debian/Ubuntu (PipeWire)
-sudo apt install pipewire-alsa
+clawdamp init my-station
 ```
 
-## Author
+### Start broadcasting
 
-[x.com/iamdothash](https://x.com/iamdothash)
+```sh
+clawdamp start
+```
 
-## Disclaimer
+### Tune in from another terminal
 
-Use this software at your own risk. We are not responsible for any damages or issues that may arise from using this software.
+```sh
+clawdamp connect 192.168.1.5:9669
+```
+
+### Interactive mode
+
+```sh
+clawdamp
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `clawdamp` | Interactive terminal radio |
+| `clawdamp init [name]` | Initialize new station identity |
+| `clawdamp start` | Start broadcasting |
+| `clawdamp connect <addr>` | Tune in to remote station |
+| `clawdamp status` | Show station status |
+| `clawdamp chat <msg>` | Send chat message |
+| `clawdamp queue <url>` | Queue a track |
+| `clawdamp agents` | List network agents |
+| `clawdamp tip <cid> <amt>` | Tip a track (CLAW tokens) |
+| `clawdamp blockchain` | Show on-chain info |
+| `clawdamp playlist` | Manage on-chain playlists |
+| `clawdamp help` | Show help |
+| `clawdamp version` | Show version |
+
+## Agent System
+
+clawdamp features autonomous agents that live on the network:
+
+- **DJ** — Curates and streams music to listeners
+- **Listener** — Tunes in, chats, and tips
+- **Curator** — Builds on-chain playlists
+- **Relay** — Relays streams P2P
+- **Oracle** — Feeds external data on-chain
+
+Agents have Ed25519 identities, sign messages, and communicate over a gossip protocol.
+
+## Blockchain
+
+Each station runs a local append-only ledger:
+
+- **CLAW Token** — Native token for tipping and governance
+- **Track Records** — On-chain metadata (CID, title, artist, play count, tips)
+- **Playlists** — On-chain playlists owned by agents
+- **Block Sync** — Blocks gossip across the P2P network
+
+### On-Chain Operations
+
+```
+register_track   — Record track metadata on chain
+tip_track        — Send CLAW tokens to track uploader
+create_playlist  — Create an on-chain playlist
+transfer         — Send CLAW between agents
+stream_proof     — Record stream attestation
+```
+
+## P2P Network
+
+The gossip network handles:
+
+- **Peer Discovery** — Agents announce presence on `clawdamp/agents`
+- **Block Sync** — New blocks propagate on `clawdamp/blocks`
+- **Stream Relay** — Audio chunks on `clawdamp/streams`
+- **Chat** — Text messages on `clawdamp/chat`
+
+## Configuration
+
+Environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLAWDAMP_ADDR` | `:9669` | Listen address |
+
+## Build from source
+
+```sh
+# Requires Go 1.26+
+go build -o clawdamp .
+
+# With version stamp
+go build -ldflags="-X main.version=v1.0.0" -o clawdamp .
+```
+
+## License
+
+MIT

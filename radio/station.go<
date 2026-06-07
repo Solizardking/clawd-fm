@@ -29,11 +29,11 @@ type Station struct {
 	Agents  map[string]*agent.Agent // agent ID -> agent
 
 	// Radio state.
-	NowPlaying *Track
-	Listeners  int
-	Queue      []*Track
-	Streaming  bool
-	CurrentDJ  *agent.Identity
+	NowPlaying  *Track
+	Listeners   int
+	Queue       []*Track
+	Streaming   bool
+	CurrentDJ   *agent.Identity
 
 	// Channel for audio chunks being streamed out.
 	streamOut chan *p2p.StreamChunk
@@ -87,7 +87,7 @@ const (
 func New(name string) (*Station, error) {
 	id, priv, err := agent.NewIdentity(name, agent.RoleDJ)
 	if err != nil {
-		return nil, fmt.Errorf("station: %w", err)
+		return nil, fmt.Errorf("radio: %w", err)
 	}
 
 	ledger := blockchain.NewLedger(priv.Public().(ed25519.PublicKey))
@@ -128,7 +128,7 @@ func New(name string) (*Station, error) {
 // Start boots the station and begins broadcasting.
 func (s *Station) Start(addr string) error {
 	if err := s.Network.Start(addr); err != nil {
-		return fmt.Errorf("station: network: %w", err)
+		return fmt.Errorf("radio: network: %w", err)
 	}
 
 	go s.runLoop()

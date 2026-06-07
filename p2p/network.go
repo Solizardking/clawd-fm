@@ -19,21 +19,21 @@ import (
 
 // Topic names for the clawdamp gossip network.
 const (
-	TopicAgents      = "clawdamp/agents"
-	TopicBlocks      = "clawdamp/blocks"
-	TopicStreams     = "clawdamp/streams"
-	TopicChat        = "clawdamp/chat"
-	TopicMarket      = "clawdamp/market"
+	TopicAgents  = "clawdamp/agents"
+	TopicBlocks  = "clawdamp/blocks"
+	TopicStreams = "clawdamp/streams"
+	TopicChat    = "clawdamp/chat"
+	TopicMarket  = "clawdamp/market"
 )
 
 // Peer represents a remote node on the clawdamp network.
 type Peer struct {
-	ID         string
-	Addr       net.Addr
-	Identity   *agent.Identity
-	LastSeen   time.Time
-	Latency    time.Duration
-	Streaming  bool
+	ID        string
+	Addr      net.Addr
+	Identity  *agent.Identity
+	LastSeen  time.Time
+	Latency   time.Duration
+	Streaming bool
 }
 
 // StreamChunk is an audio chunk relayed over p2p.
@@ -52,8 +52,8 @@ type Network struct {
 	mu       sync.RWMutex
 	Self     *agent.Identity
 	PrivKey  ed25519.PrivateKey
-	Peers    map[string]*Peer          // peer ID -> peer
-	Topics   map[string][]string       // topic -> subscribed peer IDs
+	Peers    map[string]*Peer    // peer ID -> peer
+	Topics   map[string][]string // topic -> subscribed peer IDs
 	Ledger   *blockchain.Ledger
 	AgentReg *AgentRegistry
 
@@ -64,10 +64,10 @@ type Network struct {
 	chatCh   chan *ChatMessage
 
 	// Network layer.
-	listener  net.Listener
-	ctx       context.Context
-	cancel    context.CancelFunc
-	done      chan struct{}
+	listener net.Listener
+	ctx      context.Context
+	cancel   context.CancelFunc
+	done     chan struct{}
 
 	// Callbacks.
 	onStream     func(*StreamChunk)
@@ -87,8 +87,8 @@ type ChatMessage struct {
 
 // AgentRegistry maintains a directory of known agents.
 type AgentRegistry struct {
-	mu      sync.RWMutex
-	Agents  map[string]*agent.Identity // ID -> identity
+	mu     sync.RWMutex
+	Agents map[string]*agent.Identity // ID -> identity
 }
 
 // NewAgentRegistry creates a fresh agent registry.
@@ -140,9 +140,9 @@ func (ar *AgentRegistry) Remove(id string) {
 func NewNetwork(self *agent.Identity, priv ed25519.PrivateKey, ledger *blockchain.Ledger) *Network {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Network{
-		Self:     self,
-		PrivKey:  priv,
-		Peers:    make(map[string]*Peer),
+		Self:    self,
+		PrivKey: priv,
+		Peers:   make(map[string]*Peer),
 		Topics: map[string][]string{
 			TopicAgents:  {},
 			TopicBlocks:  {},
