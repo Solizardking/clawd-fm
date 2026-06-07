@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	clawdapi "clawdamp/api"
 	"clawdamp/agent"
 	"clawdamp/blockchain"
 	"clawdamp/p2p"
@@ -125,8 +126,16 @@ func interactive(ctx context.Context) error {
 		return fmt.Errorf("start station: %w", err)
 	}
 
+	// Start HTTP API (SSE + REST for radio.x402.wtf frontend).
+	httpAddr := envOr("CLAWD_HTTP_ADDR", ":8080")
+	apiSrv := clawdapi.New(st)
+	if err := apiSrv.Start(httpAddr); err != nil {
+		return fmt.Errorf("start api: %w", err)
+	}
+
 	fmt.Printf("[clawd-fm] station: %s\n", stationName)
 	fmt.Printf("[clawd-fm] p2p:     %s\n", addr)
+	fmt.Printf("[clawd-fm] http:    %s\n", httpAddr)
 	fmt.Printf("[clawd-fm] id:      %s\n", st.Identity.Fingerprint())
 	fmt.Printf("[clawd-fm] height:  %d\n", st.BlockHeight())
 	fmt.Println()
