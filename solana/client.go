@@ -45,7 +45,7 @@ func (n Network) Endpoint() string {
 	case Local:
 		return "http://127.0.0.1:8899"
 	default:
-		return rpc.MainNet_RPC
+		return rpc.MainNetBeta_RPC
 	}
 }
 
