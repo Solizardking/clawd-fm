@@ -1,0 +1,27 @@
+[Unit]
+Description=CLAWD FM — First Solana Onchain Terminal Radio Station
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=clawd
+WorkingDirectory=/opt/clawd-fm
+ExecStart=/opt/clawd-fm/clawdamp daemon
+Restart=always
+RestartSec=10
+
+# Environment — override in /etc/clawd-fm.env
+EnvironmentFile=-/etc/clawd-fm.env
+Environment=CLAWD_FM_NAME=CLAWD FM
+Environment=CLAWD_FM_ADDR=:9669
+Environment=CLAWD_SOL_NETWORK=mainnet
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/clawd-fm/.clawd-fm
+
+[Install]
+WantedBy=multi-user.target

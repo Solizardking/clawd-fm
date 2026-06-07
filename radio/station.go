@@ -1,7 +1,6 @@
-// Package radio is the core clawdamp terminal radio engine.
-// It orchestrates agents, the blockchain ledger, and the p2p network
-// to deliver a decentralized terminal radio experience.
-// Terminal-to-terminal: one agent streams, others tune in.
+// Package radio is the core CLAWD FM engine.
+// It orchestrates agents, the local ledger, Solana on-chain ops, and the p2p
+// network to deliver the first Solana onchain terminal radio station.
 package radio
 
 import (
@@ -11,12 +10,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gagliardetto/solana-go"
+
 	"clawdamp/agent"
 	"clawdamp/blockchain"
 	"clawdamp/p2p"
+	solanaclient "clawdamp/solana"
 )
 
-// Station manages the clawdamp radio station on a single node.
+// Station manages the CLAWD FM radio station on a single node.
 type Station struct {
 	mu       sync.RWMutex
 	Name     string
@@ -26,7 +28,8 @@ type Station struct {
 	// Core subsystems.
 	Ledger  *blockchain.Ledger
 	Network *p2p.Network
-	Agents  map[string]*agent.Agent // agent ID -> agent
+	Agents  map[string]*agent.Agent
+	Solana  *solanaclient.Client // nil when running without Solana
 
 	// Radio state.
 	NowPlaying *Track
@@ -35,7 +38,7 @@ type Station struct {
 	Streaming  bool
 	CurrentDJ  *agent.Identity
 
-	// Channel for audio chunks being streamed out.
+	// Outbound audio chunk channel.
 	streamOut chan *p2p.StreamChunk
 
 	// Station event bus.
@@ -47,29 +50,31 @@ type Station struct {
 	done   chan struct{}
 }
 
-// Track represents a track in the clawdamp radio queue.
+// Track represents a track in the CLAWD FM queue.
 type Track struct {
-	CID       string          `json:"cid"`
-	Title     string          `json:"title"`
-	Artist    string          `json:"artist"`
-	Duration  time.Duration   `json:"duration"`
-	Source    string          `json:"source"`
-	Uploader  *agent.Identity `json:"uploader,omitempty"`
-	OnChain   bool            `json:"on_chain"`
-	TipTotal  uint64          `json:"tip_total"`
-	PlayCount uint64          `json:"play_count"`
-	AddedBy   *agent.Identity `json:"added_by,omitempty"`
-	AddedAt   time.Time       `json:"added_at"`
+	CID          string          `json:"cid"`
+	Title        string          `json:"title"`
+	Artist       string          `json:"artist"`
+	Duration     time.Duration   `json:"duration"`
+	Source       string          `json:"source"`
+	Uploader     *agent.Identity `json:"uploader,omitempty"`
+	SolanaWallet string          `json:"solana_wallet,omitempty"` // artist tip address
+	OnChain      bool            `json:"on_chain"`
+	SolSig       string          `json:"sol_sig,omitempty"` // Solana tx sig
+	TipTotal     uint64          `json:"tip_total"`
+	PlayCount    uint64          `json:"play_count"`
+	AddedBy      *agent.Identity `json:"added_by,omitempty"`
+	AddedAt      time.Time       `json:"added_at"`
 }
 
-// StationEvent is emitted for UI updates.
+// StationEvent is emitted for terminal UI updates.
 type StationEvent struct {
 	Type    string      `json:"type"`
 	Payload interface{} `json:"payload"`
 	Time    time.Time   `json:"time"`
 }
 
-// Event types.
+// Event type constants.
 const (
 	EventTrackStart    = "track_start"
 	EventTrackEnd      = "track_end"
@@ -81,9 +86,10 @@ const (
 	EventNewBlock      = "new_block"
 	EventChatMessage   = "chat_message"
 	EventBalanceUpdate = "balance_update"
+	EventSolanaOp      = "solana_op"
 )
 
-// New creates a new clawdamp station.
+// New creates a new CLAWD FM station node.
 func New(name string) (*Station, error) {
 	id, priv, err := agent.NewIdentity(name, agent.RoleDJ)
 	if err != nil {
@@ -104,16 +110,14 @@ func New(name string) (*Station, error) {
 		Agents:    make(map[string]*agent.Agent),
 		Queue:     make([]*Track, 0),
 		streamOut: make(chan *p2p.StreamChunk, 1024),
-		events:    make(chan StationEvent, 256),
+		events:    make(chan StationEvent, 512),
 		ctx:       ctx,
 		cancel:    cancel,
 		done:      make(chan struct{}),
 	}
 
-	// Register self.
 	network.AgentReg.Register(id)
 
-	// Wire network callbacks.
 	network.SetCallbacks(
 		s.onStreamChunk,
 		s.onBlockReceived,
@@ -125,12 +129,18 @@ func New(name string) (*Station, error) {
 	return s, nil
 }
 
+// WithSolana attaches a Solana client to the station.
+func (s *Station) WithSolana(client *solanaclient.Client) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Solana = client
+}
+
 // Start boots the station and begins broadcasting.
 func (s *Station) Start(addr string) error {
 	if err := s.Network.Start(addr); err != nil {
 		return fmt.Errorf("station: network: %w", err)
 	}
-
 	go s.runLoop()
 	return nil
 }
@@ -139,12 +149,9 @@ func (s *Station) Start(addr string) error {
 func (s *Station) Stop() error {
 	s.cancel()
 	<-s.done
-
-	// Stop all agents.
 	for _, a := range s.Agents {
 		_ = a.Stop()
 	}
-
 	return s.Network.Stop()
 }
 
@@ -152,12 +159,10 @@ func (s *Station) Stop() error {
 func (s *Station) AddAgent(a *agent.Agent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	s.Agents[a.Identity.ID] = a
 	if err := a.Start(); err != nil {
 		return err
 	}
-
 	a.SetStatus(agent.StatusListening)
 	return nil
 }
@@ -166,31 +171,25 @@ func (s *Station) AddAgent(a *agent.Agent) error {
 func (s *Station) RemoveAgent(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	a, ok := s.Agents[id]
 	if !ok {
 		return fmt.Errorf("agent %s not found", id)
 	}
-
 	_ = a.Stop()
 	delete(s.Agents, id)
 	return nil
 }
 
-// CreateDJAgent creates a new DJ agent.
+// CreateDJAgent creates a DJ agent for the station.
 func (s *Station) CreateDJAgent(name string) (*agent.Agent, error) {
 	id, priv, err := agent.NewIdentity(name, agent.RoleDJ)
 	if err != nil {
 		return nil, err
 	}
-
 	a := agent.New(id, priv)
-
 	a.SetHandlers(
-		nil, // onTick: no-op for DJ
-		nil, // onMessage: handled by station
+		nil, nil,
 		func(ctx context.Context) error {
-			fmt.Printf("🎧 DJ %s entered the booth\n", name)
 			s.mu.Lock()
 			s.CurrentDJ = id
 			s.mu.Unlock()
@@ -198,7 +197,6 @@ func (s *Station) CreateDJAgent(name string) (*agent.Agent, error) {
 			return nil
 		},
 		func(ctx context.Context) error {
-			fmt.Printf("🎧 DJ %s left the booth\n", name)
 			s.mu.Lock()
 			s.CurrentDJ = nil
 			s.Streaming = false
@@ -207,20 +205,17 @@ func (s *Station) CreateDJAgent(name string) (*agent.Agent, error) {
 			return nil
 		},
 	)
-
 	a.Subscribe("track_request", "chat", "tip")
 	return a, nil
 }
 
-// CreateListenerAgent creates a new listener agent.
+// CreateListenerAgent creates a listener agent.
 func (s *Station) CreateListenerAgent(name string) (*agent.Agent, error) {
 	id, priv, err := agent.NewIdentity(name, agent.RoleListener)
 	if err != nil {
 		return nil, err
 	}
-
 	a := agent.New(id, priv)
-
 	a.SetHandlers(
 		nil, nil,
 		func(ctx context.Context) error {
@@ -228,21 +223,22 @@ func (s *Station) CreateListenerAgent(name string) (*agent.Agent, error) {
 			s.Listeners++
 			count := s.Listeners
 			s.mu.Unlock()
-			fmt.Printf("👤 %s joined (listeners: %d)\n", name, count)
+			fmt.Printf("[clawd-fm] %s tuned in (%d listeners)\n", name, count)
 			s.emit(StationEvent{Type: EventListenerJoin, Payload: id, Time: time.Now()})
 			return nil
 		},
 		func(ctx context.Context) error {
 			s.mu.Lock()
-			s.Listeners--
+			if s.Listeners > 0 {
+				s.Listeners--
+			}
 			count := s.Listeners
 			s.mu.Unlock()
-			fmt.Printf("👤 %s left (listeners: %d)\n", name, count)
+			fmt.Printf("[clawd-fm] %s left (%d listeners)\n", name, count)
 			s.emit(StationEvent{Type: EventListenerLeft, Payload: id, Time: time.Now()})
 			return nil
 		},
 	)
-
 	a.Subscribe("stream", "chat")
 	return a, nil
 }
@@ -255,8 +251,10 @@ func (s *Station) QueueTrack(t *Track) {
 	s.Queue = append(s.Queue, t)
 }
 
-// RegisterTrackOnChain records track metadata on the blockchain.
+// RegisterTrackOnChain records track metadata on Solana (via Memo program)
+// and writes to the local ledger. The Solana tx signature is stored in SolSig.
 func (s *Station) RegisterTrackOnChain(t *Track) error {
+	// Write to local ledger first.
 	acct := s.Ledger.GetBalance(s.PrivKey.Public().(ed25519.PublicKey))
 	op, err := blockchain.NewOperation(
 		blockchain.OpRegisterTrack,
@@ -264,16 +262,11 @@ func (s *Station) RegisterTrackOnChain(t *Track) error {
 		nil,
 		0,
 		acct,
-		blockchain.TrackRecord{
-			CID:    t.CID,
-			Title:  t.Title,
-			Artist: t.Artist,
-		},
+		blockchain.TrackRecord{CID: t.CID, Title: t.Title, Artist: t.Artist},
 	)
 	if err != nil {
-		return fmt.Errorf("register track: %w", err)
+		return fmt.Errorf("register track (local): %w", err)
 	}
-
 	last := s.Ledger.LastBlock()
 	block := &blockchain.Block{
 		Index:     last.Index + 1,
@@ -281,36 +274,75 @@ func (s *Station) RegisterTrackOnChain(t *Track) error {
 		Timestamp: time.Now(),
 		Ops:       []blockchain.Operation{op},
 	}
-
 	if err := s.Ledger.AddBlock(block); err != nil {
 		return fmt.Errorf("add block: %w", err)
 	}
+	s.Network.BroadcastBlock(block)
+
+	// Write to Solana if client is attached.
+	s.mu.RLock()
+	sc := s.Solana
+	s.mu.RUnlock()
+
+	if sc != nil {
+		sig, err := sc.RegisterTrack(s.ctx, t.CID, t.Title, t.Artist)
+		if err != nil {
+			fmt.Printf("[solana] warn: track memo failed: %v\n", err)
+		} else {
+			s.mu.Lock()
+			t.SolSig = sig
+			s.mu.Unlock()
+			s.emit(StationEvent{
+				Type:    EventSolanaOp,
+				Payload: map[string]string{"op": "register_track", "sig": sig, "cid": t.CID},
+				Time:    time.Now(),
+			})
+		}
+	}
 
 	t.OnChain = true
-	s.Network.BroadcastBlock(block)
 	return nil
 }
 
-// TipTrack sends a tip from the station's balance to a track uploader.
-func (s *Station) TipTrack(cid string, amount uint64) error {
+// TipTrack sends a SOL tip to a track's artist wallet on Solana.
+// Falls back to local ledger tip when Solana is not configured.
+func (s *Station) TipTrack(cid string, lamports uint64) error {
+	s.mu.RLock()
+	sc := s.Solana
+	s.mu.RUnlock()
+
 	track := s.Ledger.GetTrack(cid)
+
+	if sc != nil && track != nil && len(track.Uploader) == 32 {
+		dest := solana.PublicKeyFromBytes(track.Uploader)
+		sig, err := sc.TipArtist(s.ctx, dest, lamports)
+		if err != nil {
+			return fmt.Errorf("sol tip: %w", err)
+		}
+		s.emit(StationEvent{
+			Type:    EventTipReceived,
+			Payload: map[string]interface{}{"cid": cid, "lamports": lamports, "sig": sig},
+			Time:    time.Now(),
+		})
+		return nil
+	}
+
+	// Local ledger fallback.
 	if track == nil {
 		return fmt.Errorf("track %s not found on chain", cid)
 	}
-
 	acct := s.Ledger.GetBalance(s.PrivKey.Public().(ed25519.PublicKey))
 	op, err := blockchain.NewOperation(
 		blockchain.OpTipTrack,
 		s.PrivKey,
 		ed25519.PublicKey(track.Uploader),
-		amount,
+		lamports,
 		acct,
 		struct{ CID string }{CID: cid},
 	)
 	if err != nil {
 		return err
 	}
-
 	last := s.Ledger.LastBlock()
 	block := &blockchain.Block{
 		Index:     last.Index + 1,
@@ -318,22 +350,19 @@ func (s *Station) TipTrack(cid string, amount uint64) error {
 		Timestamp: time.Now(),
 		Ops:       []blockchain.Operation{op},
 	}
-
 	if err := s.Ledger.AddBlock(block); err != nil {
 		return err
 	}
-
 	s.emit(StationEvent{
 		Type:    EventTipReceived,
-		Payload: map[string]interface{}{"cid": cid, "amount": amount},
+		Payload: map[string]interface{}{"cid": cid, "lamports": lamports},
 		Time:    time.Now(),
 	})
-
 	s.Network.BroadcastBlock(block)
 	return nil
 }
 
-// CreatePlaylistOnChain creates a playlist as an on-chain record.
+// CreatePlaylistOnChain registers a playlist on Solana and the local ledger.
 func (s *Station) CreatePlaylistOnChain(name string, cids []string) error {
 	acct := s.Ledger.GetBalance(s.PrivKey.Public().(ed25519.PublicKey))
 	op, err := blockchain.NewOperation(
@@ -342,15 +371,11 @@ func (s *Station) CreatePlaylistOnChain(name string, cids []string) error {
 		nil,
 		0,
 		acct,
-		blockchain.PlaylistRecord{
-			Name:      name,
-			TrackCIDs: cids,
-		},
+		blockchain.PlaylistRecord{Name: name, TrackCIDs: cids},
 	)
 	if err != nil {
 		return err
 	}
-
 	last := s.Ledger.LastBlock()
 	block := &blockchain.Block{
 		Index:     last.Index + 1,
@@ -358,12 +383,27 @@ func (s *Station) CreatePlaylistOnChain(name string, cids []string) error {
 		Timestamp: time.Now(),
 		Ops:       []blockchain.Operation{op},
 	}
-
 	if err := s.Ledger.AddBlock(block); err != nil {
 		return err
 	}
-
 	s.Network.BroadcastBlock(block)
+
+	s.mu.RLock()
+	sc := s.Solana
+	s.mu.RUnlock()
+
+	if sc != nil {
+		sig, err := sc.CreatePlaylist(s.ctx, name, cids)
+		if err != nil {
+			fmt.Printf("[solana] warn: playlist memo failed: %v\n", err)
+		} else {
+			s.emit(StationEvent{
+				Type:    EventSolanaOp,
+				Payload: map[string]string{"op": "create_playlist", "sig": sig, "name": name},
+				Time:    time.Now(),
+			})
+		}
+	}
 	return nil
 }
 
@@ -376,7 +416,29 @@ func (s *Station) SendChat(from *agent.Identity, text string) {
 	})
 }
 
-// StreamChunkOut returns the channel for audio chunks to be played.
+// SolanaBalance returns the station wallet's SOL balance.
+func (s *Station) SolanaBalance(ctx context.Context) (float64, error) {
+	s.mu.RLock()
+	sc := s.Solana
+	s.mu.RUnlock()
+	if sc == nil {
+		return 0, fmt.Errorf("solana not configured")
+	}
+	return sc.BalanceSOL(ctx)
+}
+
+// SolanaPublicKey returns the station's Solana wallet address.
+func (s *Station) SolanaPublicKey() string {
+	s.mu.RLock()
+	sc := s.Solana
+	s.mu.RUnlock()
+	if sc == nil {
+		return "(no wallet)"
+	}
+	return sc.PublicKeyBase58()
+}
+
+// StreamChunkOut returns the channel for outbound audio chunks.
 func (s *Station) StreamChunkOut() <-chan *p2p.StreamChunk {
 	return s.streamOut
 }
@@ -386,12 +448,12 @@ func (s *Station) Events() <-chan StationEvent {
 	return s.events
 }
 
-// Balance returns the station's token balance.
+// Balance returns the local ledger token balance.
 func (s *Station) Balance() uint64 {
 	return s.Ledger.GetBalance(s.PrivKey.Public().(ed25519.PublicKey))
 }
 
-// BlockHeight returns the current chain length.
+// BlockHeight returns the current local chain height.
 func (s *Station) BlockHeight() uint64 {
 	return s.Ledger.Len()
 }
@@ -403,10 +465,50 @@ func (s *Station) GetNowPlaying() *Track {
 	return s.NowPlaying
 }
 
+// Stats returns a live snapshot of station metrics.
+func (s *Station) Stats() StationStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return StationStats{
+		Name:        s.Name,
+		Listeners:   s.Listeners,
+		QueueLen:    len(s.Queue),
+		BlockHeight: s.Ledger.Len(),
+		Balance:     s.Ledger.GetBalance(s.PrivKey.Public().(ed25519.PublicKey)),
+		Agents:      len(s.Agents),
+		Peers:       len(s.Network.Peers),
+		Streaming:   s.Streaming,
+		NowPlaying:  s.NowPlaying,
+		SolWallet:   s.solanaWallet(),
+		HasSolana:   s.Solana != nil,
+	}
+}
+
+func (s *Station) solanaWallet() string {
+	if s.Solana == nil {
+		return ""
+	}
+	return s.Solana.PublicKeyBase58()
+}
+
+// StationStats is a live snapshot of station health.
+type StationStats struct {
+	Name        string `json:"name"`
+	Listeners   int    `json:"listeners"`
+	QueueLen    int    `json:"queue_len"`
+	BlockHeight uint64 `json:"block_height"`
+	Balance     uint64 `json:"balance"`
+	Agents      int    `json:"agents"`
+	Peers       int    `json:"peers"`
+	Streaming   bool   `json:"streaming"`
+	NowPlaying  *Track `json:"now_playing,omitempty"`
+	SolWallet   string `json:"sol_wallet,omitempty"`
+	HasSolana   bool   `json:"has_solana"`
+}
+
 // Network callbacks.
 
 func (s *Station) onStreamChunk(chunk *p2p.StreamChunk) {
-	// Route stream chunks to listeners.
 	s.mu.RLock()
 	for _, a := range s.Agents {
 		if a.Identity.Role == agent.RoleListener {
@@ -420,7 +522,6 @@ func (s *Station) onStreamChunk(chunk *p2p.StreamChunk) {
 	}
 	s.mu.RUnlock()
 
-	// Forward to station output.
 	select {
 	case s.streamOut <- chunk:
 	default:
@@ -431,32 +532,19 @@ func (s *Station) onBlockReceived(b *blockchain.Block) {
 	if err := s.Ledger.AddBlock(b); err != nil {
 		return
 	}
-	s.emit(StationEvent{
-		Type:    EventNewBlock,
-		Payload: b.Index,
-		Time:    time.Now(),
-	})
+	s.emit(StationEvent{Type: EventNewBlock, Payload: b.Index, Time: time.Now()})
 }
 
 func (s *Station) onAgentJoin(id *agent.Identity) {
 	s.Network.AgentReg.Register(id)
-	s.emit(StationEvent{
-		Type:    EventDJJoined,
-		Payload: id,
-		Time:    time.Now(),
-	})
+	s.emit(StationEvent{Type: EventDJJoined, Payload: id, Time: time.Now()})
 }
 
 func (s *Station) onAgentLeave(id *agent.Identity) {
-	s.emit(StationEvent{
-		Type:    EventDJLeft,
-		Payload: id,
-		Time:    time.Now(),
-	})
+	s.emit(StationEvent{Type: EventDJLeft, Payload: id, Time: time.Now()})
 }
 
 func (s *Station) onChatMessage(msg *p2p.ChatMessage) {
-	// Relay chat to all local agents.
 	s.mu.RLock()
 	for _, a := range s.Agents {
 		a.Send(&agent.Message{
@@ -467,20 +555,13 @@ func (s *Station) onChatMessage(msg *p2p.ChatMessage) {
 		})
 	}
 	s.mu.RUnlock()
-
-	s.emit(StationEvent{
-		Type:    EventChatMessage,
-		Payload: msg,
-		Time:    msg.Timestamp,
-	})
+	s.emit(StationEvent{Type: EventChatMessage, Payload: msg, Time: msg.Timestamp})
 }
 
 func (s *Station) runLoop() {
 	defer close(s.done)
-
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
-
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -494,17 +575,12 @@ func (s *Station) runLoop() {
 func (s *Station) tick() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	// Auto-advance queue if nothing is playing.
 	if s.CurrentDJ == nil && len(s.Queue) > 0 {
 		t := s.Queue[0]
 		s.Queue = s.Queue[1:]
 		s.NowPlaying = t
-		s.emit(StationEvent{
-			Type:    EventTrackStart,
-			Payload: t,
-			Time:    time.Now(),
-		})
+		t.PlayCount++
+		s.emit(StationEvent{Type: EventTrackStart, Payload: t, Time: time.Now()})
 	}
 }
 
@@ -513,35 +589,4 @@ func (s *Station) emit(ev StationEvent) {
 	case s.events <- ev:
 	default:
 	}
-}
-
-// Stats returns a snapshot of station metrics.
-func (s *Station) Stats() StationStats {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	return StationStats{
-		Name:        s.Name,
-		Listeners:   s.Listeners,
-		QueueLen:    len(s.Queue),
-		BlockHeight: s.Ledger.Len(),
-		Balance:     s.Ledger.GetBalance(s.PrivKey.Public().(ed25519.PublicKey)),
-		Agents:      len(s.Agents),
-		Peers:       len(s.Network.Peers),
-		Streaming:   s.Streaming,
-		NowPlaying:  s.NowPlaying,
-	}
-}
-
-// StationStats is a snapshot of station health.
-type StationStats struct {
-	Name        string `json:"name"`
-	Listeners   int    `json:"listeners"`
-	QueueLen    int    `json:"queue_len"`
-	BlockHeight uint64 `json:"block_height"`
-	Balance     uint64 `json:"balance"`
-	Agents      int    `json:"agents"`
-	Peers       int    `json:"peers"`
-	Streaming   bool   `json:"streaming"`
-	NowPlaying  *Track `json:"now_playing,omitempty"`
 }

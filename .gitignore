@@ -1,4 +1,42 @@
+# CLAWD FM binaries
 clawdamp
-*.log
+clawdfm
+
+# Station data
 .clawdamp/
+*.key
+*.pem
+*.wallet
+
+# Solana keypairs — never commit
+id.json
+keypair.json
+*-keypair.json
+
+# Go build artifacts
+*.test
+*.out
+vendor/
+
+# Logs and runtime
+*.log
+clawd-*.log
+
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Deploy state
+deploy/.deploy_state
