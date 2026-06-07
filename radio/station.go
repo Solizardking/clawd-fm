@@ -160,8 +160,8 @@ func (s *Station) Stop() error {
 // AddAgent registers and starts an agent on this station.
 func (s *Station) AddAgent(a *agent.Agent) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.Agents[a.Identity.ID] = a
+	s.mu.Unlock()
 	if err := a.Start(); err != nil {
 		return err
 	}

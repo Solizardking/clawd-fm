@@ -23,6 +23,7 @@ COPY --from=builder /build/clawdamp .
 RUN mkdir -p /data && chmod 700 /data
 
 EXPOSE 9669
+EXPOSE 8080
 
 ENV CLAWD_FM_NAME="CLAWD FM" \
     CLAWD_FM_ADDR=":9669" \

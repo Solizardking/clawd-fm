@@ -1,0 +1,41 @@
+# fly.toml — CLAWD FM Fly.io deployment
+# See https://fly.io/docs/reference/configuration/
+
+app = "clawd-fm"
+primary_region = "iad"
+
+[build]
+  dockerfile = "deploy/Dockerfile"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 9669
+  ports = [
+    { port = 9669, handlers = ["tls"] },
+  ]
+  [[services.tcp_checks]]
+    interval = "30s"
+    timeout = "5s"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8080
+  ports = [
+    { port = 443, handlers = ["tls", "http"] },
+    { port = 80, handlers = ["http"] },
+  ]
+  [[services.http_checks]]
+    interval = "15s"
+    timeout = "5s"
+    method = "get"
+    path = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
+[mounts]
+  source = "clawd_data"
+  destination = "/data"
+  initial_size = "1gb"
