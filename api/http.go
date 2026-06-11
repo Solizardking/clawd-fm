@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 
@@ -32,13 +33,28 @@ func New(st *radio.Station) *Server {
 	return s
 }
 
+// envOr returns the value of key or fallback.
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
 // Start begins listening on addr (e.g. ":8080") and blocks until the
 // server shuts down. Callers should invoke Start in a goroutine.
+// Render's $PORT env var takes precedence over the addr argument.
 func (s *Server) Start(addr string) error {
+	// Render injects $PORT automatically. If CLAWD_HTTP_ADDR is not set
+	// but $PORT is, use it. Otherwise fall back to the addr argument.
+	listen := addr
+	if p := os.Getenv("PORT"); p != "" {
+		listen = ":" + p
+	}
 	s.mu.Lock()
-	s.srv = &http.Server{Addr: addr, Handler: s.mux()}
+	s.srv = &http.Server{Addr: listen, Handler: s.mux()}
 	s.mu.Unlock()
-	log.Printf("[api] listening on %s", addr)
+	log.Printf("[api] listening on %s", listen)
 	return s.srv.ListenAndServe()
 }
 

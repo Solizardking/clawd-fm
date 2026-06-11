@@ -1,0 +1,11 @@
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "https://clawd-fm.onrender.com/api/$1" },
+    { "source": "/events", "destination": "https://clawd-fm.onrender.com/events" },
+    { "source": "/health", "destination": "https://clawd-fm.onrender.com/health" },
+    { "source": "/(.*)", "destination": "/" }
+  ],
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite"
+}
