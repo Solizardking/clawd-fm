@@ -1,14 +1,11 @@
 # Render Blueprint — CLAWD FM Backend
 # https://render.com/docs/blueprint-spec
 #
-# Deploy the Go backend on Render, then point the Vercel frontend at it.
-#
 # Steps:
 #   1. Push this repo to GitHub.
 #   2. In Render dashboard: Blueprint → Connect repo.
-#   3. Add a secret env var: CLAWD_SOL_KEYFILE (optional, for Solana ops).
-#   4. Set CLAWD_SOL_NETWORK=devnet (or mainnet).
-#   5. Deploy — the HTTP API will be at https://clawd-fm.onrender.com.
+#   3. Add env vars: CLAWD_SOL_NETWORK=devnet, and optionally CLAWD_SOL_KEYFILE as secret.
+#   4. Deploy — the HTTP API will be at https://clawd-fm.onrender.com.
 #
 # Render injects $PORT automatically. The entrypoint.sh and Go server
 # handle mapping $PORT to the HTTP listen address.
@@ -20,7 +17,6 @@ services:
     dockerfilePath: ./deploy/Dockerfile
     dockerContext: .
     plan: free
-    healthCheckPath: /health
     envVars:
       - key: CLAWD_FM_NAME
         value: CLAWD FM
@@ -28,7 +24,3 @@ services:
         value: ":9669"
       - key: CLAWD_SOL_NETWORK
         value: devnet
-    disks:
-      - name: data
-        mountPath: /data
-        sizeGB: 1
