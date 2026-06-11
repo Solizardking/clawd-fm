@@ -6,9 +6,12 @@
 # Steps:
 #   1. Push this repo to GitHub.
 #   2. In Render dashboard: Blueprint → Connect repo.
-#   3. Set the CLAWD_SOL_KEYFILE secret (optional, for Solana ops).
+#   3. Add a secret env var: CLAWD_SOL_KEYFILE (optional, for Solana ops).
 #   4. Set CLAWD_SOL_NETWORK=devnet (or mainnet).
 #   5. Deploy — the HTTP API will be at https://clawd-fm.onrender.com.
+#
+# Render injects $PORT automatically. The entrypoint.sh and Go server
+# handle mapping $PORT to the HTTP listen address.
 
 services:
   - type: web
@@ -23,14 +26,8 @@ services:
         value: CLAWD FM
       - key: CLAWD_FM_ADDR
         value: ":9669"
-      - key: CLAWD_HTTP_ADDR
-        value: ":8080"
       - key: CLAWD_SOL_NETWORK
         value: devnet
-      - key: CLAWD_SOL_KEYFILE
-        sync: false   # set manually in Render dashboard if needed
-      - key: PORT
-        value: 8080    # Render expects this; we use CLAWD_HTTP_ADDR
     disks:
       - name: data
         mountPath: /data
